@@ -60,6 +60,21 @@ def engine_family(engines: dict, name: str) -> str:
     return (engines.get(name) or {}).get("family", name)
 
 
+def engine_supports_mode(engine_cfg: dict, mode: str) -> bool:
+    """Return whether an engine can run the requested access mode.
+
+    Existing configs did not declare capabilities, so keep a conservative
+    built-in rule for the bundled text-only proxy adapter and otherwise allow
+    custom adapters unless they opt into an explicit 'modes' list.
+    """
+    if "modes" in engine_cfg:
+        return mode in set(engine_cfg.get("modes") or [])
+    adapter = str(engine_cfg.get("adapter", ""))
+    if adapter.endswith("proxyapi.sh") and mode == "rw":
+        return False
+    return True
+
+
 def health_ok(engine_cfg: dict) -> bool:
     cmd = engine_cfg.get("health")
     if not cmd:
@@ -129,6 +144,7 @@ def main():
 
     chain = [role_cfg["engine"], *role_cfg.get("fallback", [])]
     mode = role_cfg.get("mode", "ro")
+    state_key = role_cfg.get("state_as", args.role)
     retry = int(policy.get("retry", 1))
     timeout = int(policy.get("timeout_secs", 1800))
 
@@ -158,6 +174,10 @@ def main():
                   file=sys.stderr)
             continue
         ecfg = engines.get(eng) or die(f"engine '{eng}' not defined")
+        if not engine_supports_mode(ecfg, mode):
+            print(f"[dispatcher] skip {eng}: mode '{mode}' not supported "
+                  f"by adapter {ecfg.get('adapter')}", file=sys.stderr)
+            continue
         if not health_ok(ecfg):
             print(f"[dispatcher] skip {eng}: health check failed",
                   file=sys.stderr)
@@ -186,14 +206,14 @@ def main():
             sys.stdout.write(out)
             if not out.endswith("\n"):
                 sys.stdout.write("\n")
-            state[args.role] = eng
+            state[state_key] = eng
             save_state(proj_root, state)
             if verdict == "fail":
                 print(f"[dispatcher] GATE FAIL role={args.role} engine={eng} "
                       f"verdict=fail log={log}", file=sys.stderr)
                 sys.exit(3)
             print(f"[dispatcher] OK role={args.role} engine={eng} "
-                  f"log={log}", file=sys.stderr)
+                  f"state={state_key} log={log}", file=sys.stderr)
             return
     die(f"all engines failed for role '{args.role}' "
         f"(chain={chain}, banned={banned})", code=1)

@@ -7,6 +7,7 @@
 ```
 pipeline-kit/
 ├── run-agent.sh          # pipeline 入口: run-agent.sh <role> <task_file> [--workdir DIR]
+├── apply-patch.sh        # 本機套用 patch-coder 產物，並執行 test/lint
 ├── run-council.sh        # 議會入口: run-council.sh <question_file> [--rounds N] [--id NAME]
 ├── dispatcher.py         # 引擎解析 / health check / failover / cross-check / 日誌
 ├── council.py            # 議會模式：異質 panel 辯論 -> 仲裁 verdict（詳下）
@@ -17,6 +18,7 @@ pipeline-kit/
 ├── roles/                # engine-agnostic role prompts
 │   ├── architect.md      # spec -> plan（唯讀）
 │   ├── coder.md          # plan -> 實作 + 自測（可寫）
+│   ├── patch-coder.md    # plan -> unified diff patch（唯讀 proxy flow）
 │   ├── reviewer.md       # 交叉驗證 review，輸出含 "verdict: pass|fail"
 │   ├── panelist.md       # 議會成員：獨立作答 / 交叉批判修訂
 │   └── moderator.md      # 議會仲裁：輸出 "verdict: consensus|split"
@@ -40,6 +42,15 @@ echo "重構 login API 的錯誤處理" > pipeline/F-001/00-spec.md
 ~/pipeline-kit/run-agent.sh coder     pipeline/F-001/10-plan.md > pipeline/F-001/20-impl.md
 ~/pipeline-kit/run-agent.sh reviewer  pipeline/F-001/20-impl.md > pipeline/F-001/30-review.md \
   || echo "REVIEW FAILED"   # dispatcher 強制解析 verdict：fail -> exit 3、缺 verdict 行 -> 換引擎
+```
+
+若要把實作外包給 proxy 上的文字模型，使用 patch flow；proxy 只產生
+`git apply` patch，本機再套用並跑測試：
+
+```bash
+~/pipeline-kit/run-agent.sh patch-coder pipeline/F-001/10-plan.md > pipeline/F-001/20.patch
+~/pipeline-kit/apply-patch.sh pipeline/F-001/20.patch > pipeline/F-001/20-impl.md
+~/pipeline-kit/run-agent.sh reviewer pipeline/F-001/20-impl.md > pipeline/F-001/30-review.md
 ```
 
 ## Council 模式（問題分派 -> 異質辯論 -> 驗證過的結論）
@@ -77,8 +88,12 @@ cd <project>   # pipeline.yaml 需有 council: 區塊（見 example）
    相同 `family`，否則會發生同模型自審
 4. 引擎可設 `env: {KEY: VALUE}`，dispatcher 會傳給 adapter
    （例如同一支 proxyapi.sh 以 `PROXYAPI_MODEL` 跑不同模型）
-5. 每引擎先跑 health cmd（未定義則視為存活），失敗跳下一個
-6. 每引擎最多 retry 次；全部失敗 -> exit 1，理由印在 stderr（fail loud）
+5. 引擎可設 `modes: [ro]` 或 `modes: [ro, rw]`；`proxyapi.sh` 這類純文字
+   adapter 不支援 `rw`，dispatcher 會直接 skip 到下一個 fallback
+6. role 可設 `state_as: coder`；`patch-coder` 用這個把「寫 code 的模型」
+   記到 coder state，讓 reviewer 的 cross-check 仍能避開同 family
+7. 每引擎先跑 health cmd（未定義則視為存活），失敗跳下一個
+8. 每引擎最多 retry 次；全部失敗 -> exit 1，理由印在 stderr（fail loud）
 
 ## Adapter 環境變數
 dispatcher 會把 pipeline.yaml 的 `test_cmd` / `lint_cmd` 以

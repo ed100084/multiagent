@@ -27,10 +27,12 @@ engines:
   # ── agentic CLI（唯二可跑 rw 角色）──────────────────────────────
   claude:                                # 本機 Claude CLI — 最強 agentic，coder/architect 首選
     adapter: adapters/claude.sh
+    modes: [ro, rw]
     family: claude
     health: "claude -p 'ping' --max-turns 1 --output-format text"
   codex:                                 # 本機 Codex CLI — 第二個 agentic 引擎。business 訂閱、
     adapter: adapters/codex.sh           # 月配額單帳號直扣 ⇒ 只留 coder(rw) 兜底與各鏈最後手段，
+    modes: [ro, rw]
     family: gpt                          # 常規 ro 流量一律改走 gpt-proxy（雙帳號輪替）
     health: "codex exec --sandbox read-only --skip-git-repo-check 'reply: pong'"
 
@@ -38,26 +40,31 @@ engines:
   # health 為對該模型的 1-token 呼叫；共用 /v1/models 檢查擋不住單一模型故障
   claude-proxy:                          # claude-opus-4-6 — 與 claude CLI 同 family，
     adapter: adapters/proxyapi.sh        # 只作 CLI 掛掉時的可用性兜底，不提供異質性
+    modes: [ro]
     family: claude
     env: { PROXYAPI_MODEL: claude-opus-4-6 }
     health: '. ~/.config/pipeline-kit/proxyapi.env && curl -sf -m 30 -X POST -H "Authorization: Bearer $PROXYAPI_KEY" -H "Content-Type: application/json" -d "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":1}" "$PROXYAPI_URL/v1/chat/completions" -o /dev/null'
   gpt-proxy:                             # gpt-5.5 — 與 codex CLI 同模型 ⇒ 同 family
     adapter: adapters/proxyapi.sh
+    modes: [ro]
     family: gpt
     env: { PROXYAPI_MODEL: gpt-5.5 }
     health: '. ~/.config/pipeline-kit/proxyapi.env && curl -sf -m 30 -X POST -H "Authorization: Bearer $PROXYAPI_KEY" -H "Content-Type: application/json" -d "{\"model\":\"gpt-5.5\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":1}" "$PROXYAPI_URL/v1/chat/completions" -o /dev/null'
   auto-review:                           # codex-auto-review — review 特化；gpt family
     adapter: adapters/proxyapi.sh
+    modes: [ro]
     family: gpt
     env: { PROXYAPI_MODEL: codex-auto-review }
     health: '. ~/.config/pipeline-kit/proxyapi.env && curl -sf -m 30 -X POST -H "Authorization: Bearer $PROXYAPI_KEY" -H "Content-Type: application/json" -d "{\"model\":\"codex-auto-review\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":1}" "$PROXYAPI_URL/v1/chat/completions" -o /dev/null'
   gemini-pro:                            # gemini-pro-agent — 強推理，claude/gpt 之外的主要異質引擎
     adapter: adapters/proxyapi.sh
+    modes: [ro]
     family: gemini
     env: { PROXYAPI_MODEL: gemini-pro-agent }
     health: '. ~/.config/pipeline-kit/proxyapi.env && curl -sf -m 30 -X POST -H "Authorization: Bearer $PROXYAPI_KEY" -H "Content-Type: application/json" -d "{\"model\":\"gemini-pro-agent\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":1}" "$PROXYAPI_URL/v1/chat/completions" -o /dev/null'
   gemini-flash:                          # gemini-3.5-flash-extra-low — 便宜快速，量大低風險角色
     adapter: adapters/proxyapi.sh
+    modes: [ro]
     family: gemini
     env: { PROXYAPI_MODEL: gemini-3.5-flash-extra-low }
     health: '. ~/.config/pipeline-kit/proxyapi.env && curl -sf -m 30 -X POST -H "Authorization: Bearer $PROXYAPI_KEY" -H "Content-Type: application/json" -d "{\"model\":\"gemini-3.5-flash-extra-low\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":1}" "$PROXYAPI_URL/v1/chat/completions" -o /dev/null'
@@ -67,24 +74,29 @@ engines:
   # 實測 architect(deepseek) 產出合規 plan；kimi 跑 reviewer 輸出不合規 ⇒ 只派非 gate 角色
   deepseek:                              # deepseek-v4-pro — 推理/程式強
     adapter: adapters/proxyapi.sh
+    modes: [ro]
     family: deepseek
     env: { PROXYAPI_MODEL: deepseek-v4-pro }
   glm:                                   # glm-5.2
     adapter: adapters/proxyapi.sh
+    modes: [ro]
     family: glm
     env: { PROXYAPI_MODEL: glm-5.2 }
   kimi-code:                             # kimi-k2.7-code — 程式碼特化
     adapter: adapters/proxyapi.sh
+    modes: [ro]
     family: kimi
     env: { PROXYAPI_MODEL: kimi-k2.7-code }
   minimax:                               # minimax-m2.7
     adapter: adapters/proxyapi.sh
+    modes: [ro]
     family: minimax
     env: { PROXYAPI_MODEL: minimax-m2.7 }
 
   # ── [地端] GB10，資料不出內網 ⇒ 唯一可碰敏感資料的引擎 ──────────
   local-llm:                             # qwen3.6-35b-a3b-mtp（備選：ornith-1.0-35b-mtp、27b）
     adapter: adapters/proxyapi.sh        # 一次只載一個模型：health timeout 放寬涵蓋載入時間
+    modes: [ro]
     family: local
     env: { PROXYAPI_MODEL: qwen3.6-35b-a3b-mtp }
     health_timeout: 150                  # 蓋掉 dispatcher 預設 60s，涵蓋 curl -m 120 + 載模
@@ -99,6 +111,11 @@ roles:
     engine: claude
     fallback: [codex]
     mode: rw
+  patch-coder:                           # ro：proxy 產生 unified diff，再由 apply-patch.sh 本機套用/測試
+    engine: gpt-proxy
+    fallback: [gemini-pro, claude-proxy, deepseek, local-llm]
+    mode: ro
+    state_as: coder                      # 讓 reviewer differ_from: coder 避開 patch 作者 family
   reviewer:                              # gate 角色 ⇒ 只用穩定層。cross-check 封 coder 的 family：
     engine: gpt-proxy                    #  coder=claude ⇒ claude 系被封 ⇒ gpt-proxy 首發（輪替護配額）
     fallback: [auto-review, gemini-pro, claude, codex]

@@ -44,9 +44,21 @@ $KIT/run-agent.sh coder     pipeline/F-001/10-plan.md > pipeline/F-001/20-impl.m
 $KIT/run-agent.sh reviewer  pipeline/F-001/20-impl.md > pipeline/F-001/30-review.md
 ```
 
+proxy patch flow（想用 proxy 上的 GPT/Gemini 等文字模型寫 code 時）：
+
+```bash
+$KIT/run-agent.sh patch-coder pipeline/F-001/10-plan.md > pipeline/F-001/20.patch
+$KIT/apply-patch.sh pipeline/F-001/20.patch > pipeline/F-001/20-impl.md
+$KIT/run-agent.sh reviewer pipeline/F-001/20-impl.md > pipeline/F-001/30-review.md
+```
+
 - task 檔內容用「指示 + 範圍」（檔案路徑、branch、commit range），
   **不要把大 diff 全文塞進去**——prompt 走 argv，有 ARG_MAX 上限（已知未修）。
 - coder 是 rw 模式，會用 `test_cmd`/`lint_cmd` 自我驗證；其餘角色唯讀。
+- 純文字 proxy engine 只能跑 `ro`。`coder` 這類 `rw` 角色只能用 agentic CLI
+  engine（目前是 `claude` / `codex`）；dispatcher 會 skip 不支援該 mode 的 engine。
+- `patch-coder` 是 ro 模式，只能輸出 unified diff；真正改檔與 test/lint 由
+  `$KIT/apply-patch.sh` 在本機執行。
 
 ## Council 工作流
 
@@ -90,6 +102,10 @@ $KIT/run-council.sh question.md --rounds 2   # 爭議大時加深辯論
 - 某引擎被 skip（health check failed）→ 正常，failover 會接手；
   proxy 引擎全掛時檢查 `~/.config/pipeline-kit/proxyapi.env` 與 proxy 主機
   （http://192.168.88.115:8317）。
+- `skip <engine>: mode 'rw' not supported` → 設定把 `rw` 角色派給純文字 proxy；
+  確認該 role 的 fallback 有 `claude` 或 `codex`。
+- `apply-patch.sh` 失敗 → 讀 `20-impl.md`。如果是 patch check failed，回到
+  `patch-coder` 重產；如果是 test/lint failed，修正後重跑 reviewer。
 - `engine output has no valid verdict line` → 該引擎輸出不合規，dispatcher
   已自動換下一個；若整鏈都不合規（exit 1），回報人類。
 - 前提：`claude`/`codex` CLI 已登入、`python3-yaml` 已裝（僅新機器需處理）。
