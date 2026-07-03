@@ -14,8 +14,9 @@ import argparse
 import concurrent.futures
 import datetime
 import json
-import pathlib
 import os
+import pathlib
+import re
 import string
 import subprocess
 import sys
@@ -25,6 +26,12 @@ import yaml
 import dispatcher as dp
 
 COUNCIL_DIR = "pipeline/council"
+SAFE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def validate_run_id(run_id: str):
+    if run_id in {".", ".."} or not SAFE_RUN_ID_RE.fullmatch(run_id):
+        dp.die("invalid council run id; use only A-Z, a-z, 0-9, '.', '_' or '-'")
 
 
 def call_adapter(adapter: str, role_prompt: pathlib.Path, task: pathlib.Path,
@@ -127,8 +134,11 @@ def main():
 
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     run_id = args.id or ts
+    validate_run_id(run_id)
     outdir = proj_root / COUNCIL_DIR / run_id
-    (outdir / "tasks").mkdir(parents=True, exist_ok=True)
+    if outdir.exists():
+        dp.die(f"council output dir already exists: {outdir}")
+    (outdir / "tasks").mkdir(parents=True)
     (proj_root / dp.LOG_DIR).mkdir(parents=True, exist_ok=True)
     (outdir / "00-question.md").write_text(question)
 

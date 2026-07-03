@@ -101,7 +101,6 @@ def run_engine(adapter: str, role_prompt: pathlib.Path, task: pathlib.Path,
         print(f"[dispatcher] engine failed (exit {r.returncode}), see {log}",
               file=sys.stderr)
         return None
-    print(r.stdout)
     return r.stdout
 
 
@@ -126,6 +125,7 @@ def main():
     role_prompt.is_file() or die(f"missing role prompt {role_prompt}")
     task = pathlib.Path(args.task_file)
     task.is_file() or die(f"task file not found: {task}")
+    task = task.resolve()
 
     chain = [role_cfg["engine"], *role_cfg.get("fallback", [])]
     mode = role_cfg.get("mode", "ro")
@@ -183,6 +183,9 @@ def main():
                           f"verdict line (gate role '{args.role}'), see {log}",
                           file=sys.stderr)
                     continue
+            sys.stdout.write(out)
+            if not out.endswith("\n"):
+                sys.stdout.write("\n")
             state[args.role] = eng
             save_state(proj_root, state)
             if verdict == "fail":
