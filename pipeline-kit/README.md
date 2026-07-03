@@ -27,8 +27,8 @@ pipeline-kit/
 ```bash
 git clone <this> ~/pipeline-kit          # 或直接放置
 sudo apt install python3-yaml            # 或 pip install pyyaml --break-system-packages
-cp ~/pipeline-kit/pipeline.yaml.example <project>/pipeline.yaml   # 編輯之
-```
+cd <project> && ~/pipeline-kit/init-project.sh   # 一鍵接入：pipeline.yaml（自動偵測
+```                                      # 語言/test/lint）+ CLAUDE.md 引用 + gitignore
 前提：`claude` 與 `codex` CLI 已登入、在 PATH 上。
 
 ## 使用

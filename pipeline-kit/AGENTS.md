@@ -16,18 +16,20 @@ Kit 位置（本機固定路徑）：`~/projects/multiagent/pipeline-kit`
 - **Council**：一個問題平行丟給多個異質 family 模型 → 匿名互看辯論 → 仲裁者
   逐主張比對，輸出 consensus/split。適合選型、架構取捨、診斷類**決策問題**。
 
-## 專案接入（一次性；若專案根已有 pipeline.yaml 則跳過）
+## 專案接入（一次性，一個指令）
 
 ```bash
-cp $KIT/pipeline.yaml.example ./pipeline.yaml
+$KIT/init-project.sh          # 在專案根執行；或 init-project.sh <專案路徑>
 ```
 
-只需編輯開頭四行（`project` / `language` / `test_cmd` / `lint_cmd`），
-引擎目錄與角色鏈**不要動**（已含配額策略與 cross-check 設定）。
-dispatcher 從 cwd 往上找 `pipeline.yaml`，找到的那層即專案根；
-所有產物寫在該層 `pipeline/` 下。
+冪等、可重跑、不覆蓋既有檔案。它會：建立 `pipeline.yaml`（自動偵測
+語言與 test/lint 指令，偵測不到時設 no-op 並提示）、在 `CLAUDE.md` 與
+`AGENTS.md` 加入本文件的引用段落、`.gitignore` 加 `pipeline/logs/`。
+跑完檢查 `pipeline.yaml` 開頭四行（`project`/`language`/`test_cmd`/`lint_cmd`）
+是否正確；引擎目錄與角色鏈**不要動**（已含配額策略與 cross-check 設定）。
 
-建議在專案的 `.gitignore` 加 `pipeline/logs/`；`pipeline/` 其餘產物
+dispatcher 從 cwd 往上找 `pipeline.yaml`，找到的那層即專案根；
+所有產物寫在該層 `pipeline/` 下。`pipeline/logs/` 以外的產物
 （spec/plan/impl/review/state/council）**要 commit**，它們是稽核軌跡。
 
 ## Pipeline 工作流
