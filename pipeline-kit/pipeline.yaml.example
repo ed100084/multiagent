@@ -5,7 +5,8 @@
 # 模型 id 以 proxy 的 /v1/models 為準。上游來源與派工策略：
 #   [穩定] claude-*            — Claude 訂閱
 #          gpt-5.5/auto-review — 2× Codex 訂閱（edah team + gmail plus），proxy 層
-#                                自帶帳號輪替 ⇒ 全目錄裡最抗配額的路由，適合 gate 兜底
+#                                自帶帳號輪替 ⇒ 全目錄裡最抗配額的路由 ⇒ gate 常規首選；
+#                                codex CLI 直呼單扣 business 月配額，降為各鏈殿後
 #          可當主力與 gate；reviewer 合規已實測：auto-review ✅ gemini-pro ✅
 #   [中等] gemini-* / gpt-oss-120b-medium — Antigravity（單一 gmail 帳號配額）
 #   [易爆] minimax-m2.7 / kimi-k2.7-code / glm-5.2 / deepseek-v4-pro / qwen3.7-*
@@ -28,9 +29,9 @@ engines:
     adapter: adapters/claude.sh
     family: claude
     health: "claude -p 'ping' --max-turns 1 --output-format text"
-  codex:                                 # 本機 Codex CLI — 第二個 agentic 引擎，reviewer 首選
-    adapter: adapters/codex.sh
-    family: gpt
+  codex:                                 # 本機 Codex CLI — 第二個 agentic 引擎。business 訂閱、
+    adapter: adapters/codex.sh           # 月配額單帳號直扣 ⇒ 只留 coder(rw) 兜底與各鏈最後手段，
+    family: gpt                          # 常規 ro 流量一律改走 gpt-proxy（雙帳號輪替）
     health: "codex exec --sandbox read-only --skip-git-repo-check 'reply: pong'"
 
   # ── CLIProxyAPI 純文字引擎（僅 ro）── [穩定層] ────────────────────
@@ -91,17 +92,17 @@ engines:
 roles:
   architect:                             # spec -> plan：要最強推理；唯讀故可用純文字引擎兜底
     engine: claude
-    fallback: [codex, gemini-pro, gpt-proxy, claude-proxy, deepseek]
-    mode: ro                             # deepseek 殿後：easy-quota 層只在穩定層全滅時上場
+    fallback: [gpt-proxy, gemini-pro, claude-proxy, codex, deepseek]
+    mode: ro                             # codex CLI 殿後保配額；deepseek 最後（easy-quota 層）
   coder:                                 # rw 只能給 agentic CLI；proxy 引擎會 exit 1 被跳過
     engine: claude
     fallback: [codex]
     mode: rw
   reviewer:                              # gate 角色 ⇒ 只用穩定層。cross-check 封 coder 的 family：
-    engine: codex                        #  coder=claude ⇒ claude/claude-proxy 被封 ⇒ codex 首發
-    fallback: [auto-review, gemini-pro, claude]
+    engine: gpt-proxy                    #  coder=claude ⇒ claude 系被封 ⇒ gpt-proxy 首發（輪替護配額）
+    fallback: [auto-review, gemini-pro, claude, codex]
     mode: ro                             #  coder=codex  ⇒ gpt 全封 ⇒ gemini-pro 接手 ⇒ claude
-    differ_from: coder
+    differ_from: coder                   #  codex CLI 殿後：僅 proxy 路徑全滅時的最後手段
   # summarizer:                          # 量大低風險輔助角色 → 便宜/地端
   #   engine: gemini-flash
   #   fallback: [local-llm, glm]
@@ -116,7 +117,7 @@ council:                                 # run-council.sh <question_file>
   min_panel: 2                           # 健康的異質成員少於此數 -> fail loud
   rounds: 1                              # 初答後的討論修訂輪數（互看匿名答案）
   judge: claude-proxy                    # 仲裁者（fable-5 推理最強）；與 panel 同 family
-  judge_fallback: [codex, gemini-pro]    # 可接受——裁決依據是 panel 交叉檢視，非自審
+  judge_fallback: [gpt-proxy, gemini-pro] # 可接受——裁決依據是 panel 交叉檢視，非自審
 
 policy:
   cross_check: true
