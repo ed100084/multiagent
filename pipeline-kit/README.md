@@ -7,60 +7,39 @@
 
 ```mermaid
 flowchart LR
-  subgraph PROJECT["使用者專案 repo"]
-    CONFIG["pipeline.yaml<br/>engines / roles / policy"]
-    FEATURE["pipeline/F-*/<br/>00-spec -> 10-plan -> 20-impl -> 30-review"]
-    STATE["pipeline/state/engines.json<br/>role -> last engine"]
-    LOGS["pipeline/logs/*.log<br/>stdout / stderr / exit code"]
-    QUESTION["question.md"]
-    COUNCIL_OUT["pipeline/council/&lt;id&gt;/<br/>round answers / 90-verdict.md / meta.json"]
+  subgraph PROJECT["使用者專案"]
+    CONFIG["pipeline.yaml<br/>專案設定"]
+    FEATURE["Feature artifacts<br/>00-spec -> 10-plan -> 20-impl -> 30-review"]
+    QUESTION["Decision question.md"]
+    AUDIT["Audit artifacts<br/>state / logs / council verdict"]
   end
 
   subgraph KIT["pipeline-kit（跨專案共用）"]
-    RUN_AGENT["run-agent.sh"] --> DISPATCHER["dispatcher.py<br/>role -> engine chain<br/>health / retry / failover<br/>cross-check / gate verdict"]
-    RUN_COUNCIL["run-council.sh"] --> COUNCIL["council.py<br/>family 去重 / parallel fan-out<br/>匿名辯論 / moderator 仲裁"]
-    APPLY_PATCH["apply-patch.sh<br/>套用 patch + test/lint"]
-    ROLES["roles/*.md<br/>architect / coder / reviewer<br/>panelist / moderator"]
-    ADAPTERS["adapters/*.sh<br/>claude / codex / proxyapi"]
+    PIPELINE["Pipeline mode<br/>architect -> coder -> reviewer"]
+    COUNCIL["Council mode<br/>異質 panel -> 匿名辯論 -> moderator"]
+    ROUTER["Dispatcher + adapters<br/>health / fallback / cross-check"]
   end
 
   subgraph ENGINES["可替換引擎"]
-    AGENTIC["Agentic CLI<br/>Claude / Codex<br/>ro + rw"]
-    PROXY["OpenAI-compatible proxy<br/>GPT / Gemini / local LLM<br/>ro"]
+    MODELS["Claude / Codex / GPT / Gemini / local LLM"]
   end
 
-  FEATURE --> RUN_AGENT
-  CONFIG --> DISPATCHER
-  ROLES --> DISPATCHER
-  DISPATCHER --> ADAPTERS
-  ADAPTERS --> AGENTIC
-  ADAPTERS --> PROXY
-  AGENTIC --> ADAPTERS
-  PROXY --> ADAPTERS
-  ADAPTERS --> DISPATCHER
-  DISPATCHER --> FEATURE
-  DISPATCHER --> STATE
-  DISPATCHER --> LOGS
-  STATE -. "reviewer differ_from coder" .-> DISPATCHER
-  FEATURE -. "patch-coder flow" .-> APPLY_PATCH
-  APPLY_PATCH --> FEATURE
-
-  QUESTION --> RUN_COUNCIL
-  CONFIG --> COUNCIL
-  ROLES --> COUNCIL
-  COUNCIL --> ADAPTERS
-  COUNCIL --> COUNCIL_OUT
-  COUNCIL_OUT --> HUMAN["Human gate<br/>approve plan / handle split"]
+  CONFIG --> ROUTER
+  FEATURE --> PIPELINE
+  QUESTION --> COUNCIL
+  PIPELINE --> ROUTER
+  COUNCIL --> ROUTER
+  ROUTER --> MODELS
+  MODELS --> ROUTER
+  ROUTER --> AUDIT
+  AUDIT --> HUMAN["Human gate<br/>approve plan / handle split"]
   HUMAN --> FEATURE
 ```
 
 圖中重點：
-- `pipeline-kit` 是通用 runner：role prompt、dispatcher、council、adapter 都放這裡。
-- 每個使用者專案只放 `pipeline.yaml` 與 `pipeline/` artifacts；專案差異不寫進 kit。
-- Pipeline 模式處理交付流程：spec -> plan -> implement -> review，並用
-  `pipeline/state/engines.json` 強制 reviewer 避開 coder 的同 family 引擎。
-- Council 模式處理決策問題：同一題分派給多個異質 family，引擎匿名互看修訂，
-  最後由 moderator 產出 `verdict: consensus|split`；split 交給人類決策。
+- `pipeline-kit` 放通用流程與 adapter；專案只放 `pipeline.yaml` 和 artifacts。
+- Pipeline mode 處理交付：spec -> plan -> implement -> review。
+- Council mode 處理決策：多引擎辯論後產出 `consensus|split`，split 交給人類。
 
 ## 結構
 ```
