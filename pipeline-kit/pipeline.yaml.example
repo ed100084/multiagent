@@ -36,11 +36,11 @@ engines:
 
   # ── CLIProxyAPI 純文字引擎（僅 ro）── [穩定層] ────────────────────
   # health 為對該模型的 1-token 呼叫；共用 /v1/models 檢查擋不住單一模型故障
-  claude-proxy:                          # claude-fable-5 — 最強推理；與 claude CLI 同 family，
+  claude-proxy:                          # claude-opus-4-6 — 與 claude CLI 同 family，
     adapter: adapters/proxyapi.sh        # 只作 CLI 掛掉時的可用性兜底，不提供異質性
     family: claude
-    env: { PROXYAPI_MODEL: claude-fable-5 }
-    health: '. ~/.config/pipeline-kit/proxyapi.env && curl -sf -m 30 -X POST -H "Authorization: Bearer $PROXYAPI_KEY" -H "Content-Type: application/json" -d "{\"model\":\"claude-fable-5\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":1}" "$PROXYAPI_URL/v1/chat/completions" -o /dev/null'
+    env: { PROXYAPI_MODEL: claude-opus-4-6 }
+    health: '. ~/.config/pipeline-kit/proxyapi.env && curl -sf -m 30 -X POST -H "Authorization: Bearer $PROXYAPI_KEY" -H "Content-Type: application/json" -d "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":1}" "$PROXYAPI_URL/v1/chat/completions" -o /dev/null'
   gpt-proxy:                             # gpt-5.5 — 與 codex CLI 同模型 ⇒ 同 family
     adapter: adapters/proxyapi.sh
     family: gpt
@@ -87,13 +87,14 @@ engines:
     adapter: adapters/proxyapi.sh        # 一次只載一個模型：health timeout 放寬涵蓋載入時間
     family: local
     env: { PROXYAPI_MODEL: qwen3.6-35b-a3b-mtp }
+    health_timeout: 150                  # 蓋掉 dispatcher 預設 60s，涵蓋 curl -m 120 + 載模
     health: '. ~/.config/pipeline-kit/proxyapi.env && curl -sf -m 120 -X POST -H "Authorization: Bearer $PROXYAPI_KEY" -H "Content-Type: application/json" -d "{\"model\":\"qwen3.6-35b-a3b-mtp\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":1}" "$PROXYAPI_URL/v1/chat/completions" -o /dev/null'
 
 roles:
   architect:                             # spec -> plan：要最強推理；唯讀故可用純文字引擎兜底
     engine: claude
-    fallback: [gpt-proxy, gemini-pro, claude-proxy, codex, deepseek]
-    mode: ro                             # codex CLI 殿後保配額；deepseek 最後（easy-quota 層）
+    fallback: [gpt-proxy, gemini-pro, claude-proxy, codex, deepseek, local-llm]
+    mode: ro                             # codex CLI 殿後保配額；local-llm 最終兜底（地端不吃配額）
   coder:                                 # rw 只能給 agentic CLI；proxy 引擎會 exit 1 被跳過
     engine: claude
     fallback: [codex]
@@ -103,20 +104,21 @@ roles:
     fallback: [auto-review, gemini-pro, claude, codex]
     mode: ro                             #  coder=codex  ⇒ gpt 全封 ⇒ gemini-pro 接手 ⇒ claude
     differ_from: coder                   #  codex CLI 殿後：僅 proxy 路徑全滅時的最後手段
-  # summarizer:                          # 量大低風險輔助角色 → 便宜/地端
-  #   engine: gemini-flash
-  #   fallback: [local-llm, glm]
-  #   mode: ro
-  # sensitive-reader:                    # 需讀敏感資料 → 僅地端，故意不設雲端 fallback
-  #   engine: local-llm
-  #   fallback: []
-  #   mode: ro
+  summarizer:                            # 量大低風險輔助角色 → 便宜/地端
+    engine: gemini-flash
+    fallback: [local-llm, glm]
+    mode: ro
+  sensitive-reader:                      # 需讀敏感資料 → 僅地端，故意不設雲端 fallback
+    engine: local-llm
+    fallback: []
+    mode: ro
 
 council:                                 # run-council.sh <question_file>
-  panel: [claude-proxy, gpt-proxy, gemini-pro]  # 異質 family 面板；同 family 自動去重
+  panel: [claude-proxy, gpt-proxy, gemini-pro, local-llm]  # 異質 family 面板；同 family 自動去重；
+                                         # local-llm 首呼叫慢（GB10 載模）但 fan-out 並行不拖人
   min_panel: 2                           # 健康的異質成員少於此數 -> fail loud
   rounds: 1                              # 初答後的討論修訂輪數（互看匿名答案）
-  judge: claude-proxy                    # 仲裁者（fable-5 推理最強）；與 panel 同 family
+  judge: claude-proxy                    # 仲裁者（opus-4-6）；與 panel 同 family
   judge_fallback: [gpt-proxy, gemini-pro] # 可接受——裁決依據是 panel 交叉檢視，非自審
 
 policy:

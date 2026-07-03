@@ -64,8 +64,10 @@ def health_ok(engine_cfg: dict) -> bool:
     cmd = engine_cfg.get("health")
     if not cmd:
         return True  # no health cmd defined -> assume alive
+    # engines with slow cold starts (e.g. GB10 model load) override the default
+    timeout = int(engine_cfg.get("health_timeout", 60))
     try:
-        r = subprocess.run(cmd, shell=True, capture_output=True, timeout=60)
+        r = subprocess.run(cmd, shell=True, capture_output=True, timeout=timeout)
         return r.returncode == 0
     except Exception:
         return False
